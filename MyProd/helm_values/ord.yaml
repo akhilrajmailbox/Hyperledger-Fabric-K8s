@@ -1,0 +1,29 @@
+image:
+  tag: 1.3.0
+
+persistence:
+  accessMode: ReadWriteOnce
+  storageClass: fast
+  size: 10Gi
+
+ord:
+  type: kafka
+  mspID: OrdererMSP
+
+secrets:
+  ord:
+    cert: hlf--ord${ORDERER_NUM}-idcert
+    key: hlf--ord${ORDERER_NUM}-idkey
+    caCert: hlf--ord-ca-cert
+  genesis: hlf--genesis
+  adminCert: hlf--ord-admincert
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 95
+        podAffinityTerm:
+          topologyKey: "kubernetes.io/hostname"
+          labelSelector:
+            matchLabels:
+              app: hlf-ord
