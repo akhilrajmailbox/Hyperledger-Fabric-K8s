@@ -8,17 +8,17 @@ persistence:
 
 peer:
   databaseType: CouchDB
-  couchdbInstance: cdb-peer${PEER_NUM}
-  mspID: PeerMSP
+  couchdbInstance: cdb-peer-org${ORG_NUM}-${PEER_NUM}
+  mspID: Org${ORG_NUM}MSP
 
 secrets:
-  peer:
-    cert: hlf--peer${PEER_NUM}-idcert
-    key: hlf--peer${PEER_NUM}-idkey
-    caCert: hlf--peer-ca-cert
+  peer: 
+    cert: hlf--peer-org${ORG_NUM}-${PEER_NUM}-idcert
+    key: hlf--peer-org${ORG_NUM}-${PEER_NUM}-idkey
+    caCert: hlf--peer-org${ORG_NUM}-ca-cert
   channel: hlf--channel
-  adminCert: hlf--peer-admincert
-  adminKey: hlf--peer-adminkey
+  adminCert: hlf--peer-org${ORG_NUM}-admincert
+  adminKey: hlf--peer-org${ORG_NUM}-adminkey
   caServerTls: ca--tls
 
 affinity:
