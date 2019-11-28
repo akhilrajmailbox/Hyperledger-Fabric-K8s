@@ -30,13 +30,13 @@ Organizations:
         AdminPrincipal: Role.MEMBER
 
     # Organization controlling both peers and Orderers
-    - &Org1
-        Name: Org1MSP
+    - &AidTech
+        Name: AidTech
 
         # ID to load the MSP definition as
-        ID: Org1MSP
+        ID: PeerMSP
 
-        MSPDir: ./Org1MSP
+        MSPDir: ./PeerMSP
 
         # turn off security for the peer
         AdminPrincipal: Role.MEMBER
@@ -45,26 +45,7 @@ Organizations:
             # AnchorPeers defines the location of peers that can be used
             # for cross org gossip communication.  Note, this value is only
             # encoded in the genesis block in the Application section context
-            - Host: peer1-org1-hlf-peer.peers.svc.cluster.local
-              Port: 7051
-
-    # Organization controlling both peers and Orderers
-    - &Org2
-        Name: Org2MSP
-
-        # ID to load the MSP definition as
-        ID: Org2MSP
-
-        MSPDir: ./Org2MSP
-
-        # turn off security for the peer
-        AdminPrincipal: Role.MEMBER
-
-        AnchorPeers:
-            # AnchorPeers defines the location of peers that can be used
-            # for cross org gossip communication.  Note, this value is only
-            # encoded in the genesis block in the Application section context
-            - Host: peer1-org2-hlf-peer.peers.svc.cluster.local
+            - Host: peer1-hlf-peer.peers.svc.cluster.local
               Port: 7051
 
 ################################################################################
@@ -84,7 +65,6 @@ Orderer: &OrdererDefaults
     Addresses:
         - ord1-hlf-ord.orderers.svc.cluster.local:7050
         - ord2-hlf-ord.orderers.svc.cluster.local:7050
-        - ord3-hlf-ord.orderers.svc.cluster.local:7050
 
     # Batch Timeout: The amount of time to wait before creating a batch
     BatchTimeout: 2s
@@ -147,12 +127,10 @@ Profiles:
         Consortiums:
             MyConsortium:
                 Organizations:
-                    - *Org1
-                    - *Org2
+                    - *AidTech
     MyChannel:
         Consortium: MyConsortium
         Application:
             <<: *ApplicationDefaults
             Organizations:
-                - *Org1
-                - *Org2
+                - *AidTech

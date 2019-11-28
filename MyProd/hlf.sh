@@ -1,11 +1,23 @@
 #!/bin/bash
-export PROD_DIR="../MyProd"
+export PROD_DIR="./"
 
+
+#######################################
+## Cloud Provider
+function Cloud_Provider() {
+    export CLOUD_PROVIDER=""
+    until [[ ${CLOUD_PROVIDER} == "AWS" ]] || [[${CLOUD_PROVIDER} == "Azure" ]] ; do
+        echo "Enter Either AWS or Azure"
+        read -r -p "Enter your Cloud Provider :: " CLOUD_PROVIDER </dev/tty
+        export CLOUD_PROVIDER=$CLOUD_PROVIDER
+    done
+}
 
 #######################################
 ## helm and tiller
 function Helm_Configure() {
-    kubectl create -f ../helm-rbac.yaml
+    echo "Configuring Helm in the k8s..!"
+    kubectl create -f helm-rbac.yaml
     helm init --service-account tiller
 }
 
@@ -13,12 +25,22 @@ function Helm_Configure() {
 #######################################
 ## configure storageclass
 function Storageclass_Configure() {
-    kubectl create -f ../storageclass.yaml
+    Cloud_Provider
+    echo "Configuring custom Fast storage class for the deployment...!"
+    if [[ ${CLOUD_PROVIDER} == "AWS" ]] ; then
+        kubectl create -f ${PROD_DIR}/extra/AWS-storageclass.yaml
+    elif [[ ${CLOUD_PROVIDER} == "Azure" ]] ; then
+        kubectl create -f ${PROD_DIR}/extra/Azure-storageclass.yaml
+    else
+        echo "CLOUD_PROVIDER not found..!, task aborting..!"
+        exit 1
+    fi
 }
 
 #######################################
 ## NGINX Ingress controller
 function Nginx_Configure() {
+    echo "Configure Ingress server for the deployment...!"
     helm install stable/nginx-ingress -n nginx-ingress --namespace ingress-controller
 }
 
@@ -26,6 +48,7 @@ function Nginx_Configure() {
 #######################################
 ## Certificate manager
 function Cert_Manager_Configure() {
+    echo "CA Mager Configuration...!"
     helm install stable/cert-manager -n cert-manager --namespace cert-manager
     envsubst < ${PROD_DIR}/extra/certManagerCI_staging.yaml    |    kubectl apply -f -
     envsubst < ${PROD_DIR}/extra/certManagerCI_production.yaml    |    kubectl apply -f -
@@ -35,6 +58,8 @@ function Cert_Manager_Configure() {
 #######################################
 ## Initial setup
 function Setup_Namespace() {
+    echo "Custom NameSpace Configuration : ${1}"
+
     if [[ ${1} == "create" ]] ; then
         kubectl create ns cas orderers peers
     elif [[ ${1} == "cas" ]] ; then
@@ -50,14 +75,57 @@ function Setup_Namespace() {
         namespace_options="--namespace=${K8S_NAMESPACE}"
         echo ${namespace_options}
     else
-        echo "User input is mandatory"
+        echo "User input for Setup_Namespace is mandatory"
+    fi
+}
+
+
+#######################################
+## Initial setup
+function Choose_Env() {
+    echo "Choose Env Configuration : ${1}"
+
+    if [[ ${1} == "org_number" ]] ; then
+        export ORG_NUM=""
+        # until [[ "${ORG_NUM}" =~ ^[0-9]+$ ]] ; do
+        until [[ "${ORG_NUM}" == "1" ]] || [[ "${ORG_NUM}" == "2" ]] ; do
+        read -r -p "Enter Organisation Num (integers only : 1 or 2) :: " ORG_NUM </dev/tty
+        done
+        echo "Configuring Organisation with Num :: ${ORG_NUM}"
+        export ORG_NUM=${ORG_NUM}
+    elif [[ ${1} == "order_number" ]] ; then
+        export ORDERER_NUM=""
+        # until [[ "${ORDERER_NUM}" =~ ^[0-9]+$ ]] ; do
+        until [[ "${ORDERER_NUM}" == "1" ]] || [[ "${ORDERER_NUM}" == "2" ]] || [[ "${ORDERER_NUM}" == "3" ]] ; do
+        read -r -p "Enter Orderer ID (integers only : 1 , 2 or 3) :: " ORDERER_NUM </dev/tty
+        done
+        echo "Configuring Orderer with ID :: ${ORDERER_NUM}"
+        export ORDERER_NUM="${ORDERER_NUM}"
+    elif [[ ${1} == "peer_number" ]] ; then
+        export PEER_NUM=""
+        # until [[ "${PEER_NUM}" =~ ^[0-9]+$ ]] ; do
+        until [[ "${PEER_NUM}" == "1" ]] || [[ "${PEER_NUM}" == "2" ]] || [[ "${PEER_NUM}" == "3" ]] ; do
+        read -r -p "Enter Peer ID (integers only : 1 , 2 or 3) :: " PEER_NUM </dev/tty
+        done
+        echo "Configuring Peer with ID :: ${PEER_NUM}"
+        export PEER_NUM="${PEER_NUM}"
+    elif [[ ${1} == "channel_name" ]] ; then
+        export CHANNEL_NAME=""
+        until [[ ! -z "${CHANNEL_NAME}" ]] ; do
+        read -r -p "Enter Channel name :: " CHANNEL_NAME </dev/tty
+        done
+        echo "Configuring Channel with name :: ${CHANNEL_NAME}"
+        export CHANNEL_NAME="${CHANNEL_NAME}"
+    else
+        echo "User input for Choose_Env is mandatory"
     fi
 }
 
 
 #######################################
 ## Fabric CA
-function Fabric_Configure() {
+function Fabric_CA_Configure() {
+    echo "Fabric CA Deployment...!"
     ## configuring namespace for fabric ca
     Setup_Namespace cas
 
@@ -82,16 +150,18 @@ function Fabric_Configure() {
 #######################################
 ## Org Admin Identities
 function Orgadmin_Configure() {
-
+    echo "Org Admin Configuration...!"
     export ORDERER_ADMIN_PASS=$(base64 <<< ${K8S_NAMESPACE}-ord-admin)
-    export PEER_ADMIN_PASS=$(base64 <<< ${K8S_NAMESPACE}-peer-admin)
+    export PEER_ADMIN_PASS=$(base64 <<< ${K8S_NAMESPACE}-peer-org${ORG_NUM}-admin)
 
     ## getting CA_INGRESS
     Setup_Namespace cas
     export CA_INGRESS=$(kubectl get ingress ${namespace_options} -l "app=hlf-ca,release=ca" -o jsonpath="{.items[0].spec.rules[0].host}")
+    export CA_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-ca,release=ca" -o jsonpath="{.items[0].metadata.name}")
 
     ## Orderer Organisation
     ######################
+    echo "Configuring Orderer Admin...!"
     export Admin_Conf=Orderer
     Setup_Namespace cas
     ## Get identity of ord-admin (this should not exist at first)
@@ -111,19 +181,22 @@ function Orgadmin_Configure() {
 
     ## Peer Organisation
     ######################
+    echo "Configuring Peer Admin...!"
     export Admin_Conf=Peer
     Setup_Namespace cas
-    ## Get identity of peer-admin (this should not exist at first)
-    if $(kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client identity list --id peer-admin) ; then
-        echo "identity of peer-admin already there...!"
+    Choose_Env org_number
+
+    ## Get identity of peer-org${ORG_NUM}-admin (this should not exist at first)
+    if $(kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client identity list --id peer-org${ORG_NUM}-admin) ; then
+        echo "identity of peer-org${ORG_NUM}-admin already there...!"
     else
         ## Register Peer Admin if the previous command did not work
-        kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client register --id.name peer-admin --id.secret ${PEER_ADMIN_PASS} --id.attrs 'admin=true:ecert'
+        kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client register --id.name peer-org${ORG_NUM}-admin --id.secret ${PEER_ADMIN_PASS} --id.attrs 'admin=true:ecert'
 
         ## Enroll the Organisation Admin identity
-        FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -u https://peer-admin:${PEER_ADMIN_PASS}@${CA_INGRESS} -M ${PROD_DIR}/PeerMSP
-        mkdir -p ${PROD_DIR}/config/PeerMSP/admincerts
-        cp ${PROD_DIR}/config/PeerMSP/signcerts/* ${PROD_DIR}/config/PeerMSP/admincerts
+        FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -u https://peer-org${ORG_NUM}-admin:${PEER_ADMIN_PASS}@${CA_INGRESS} -M ${PROD_DIR}/Org${ORG_NUM}MSP
+        mkdir -p ${PROD_DIR}/config/Org${ORG_NUM}MSP/admincerts
+        cp ${PROD_DIR}/config/Org${ORG_NUM}MSP/signcerts/* ${PROD_DIR}/config/Org${ORG_NUM}MSP/admincerts
         Save_Admin_Crypto
     fi
 }
@@ -132,8 +205,8 @@ function Orgadmin_Configure() {
 #######################################
 ## Save Crypto Material
 function Save_Admin_Crypto() {
-
     if [[ ${Admin_Conf} == Orderer ]] ; then
+        echo "Saving Orderer Crypto to K8s"
         ## Orderer Organisation
         Setup_Namespace orderers
         echo "Saving Crypto Material for ${Admin_Conf} with namespace_options : ${namespace_options}"
@@ -151,21 +224,22 @@ function Save_Admin_Crypto() {
         kubectl create secret generic ${namespace_options} hlf--ord-ca-cert --from-file=cacert.pem=${CA_CERT}
 
     elif [[ ${Admin_Conf} == Peer ]] ; then
+        echo "Saving Peer Crypto to K8s"
         ## Peer Organisation
         Setup_Namespace peers
         echo "Saving Crypto Material for ${Admin_Conf} with namespace_options : ${namespace_options}"
 
         ## Create a secret to hold the admincert:
-        export ORG_CERT=$(ls ${PROD_DIR}/config/PeerMSP/admincerts/cert.pem)
-        kubectl create secret generic ${namespace_options} hlf--peer-admincert --from-file=cert.pem=${ORG_CERT}
+        export ORG_CERT=$(ls ${PROD_DIR}/config/Org${ORG_NUM}MSP/admincerts/cert.pem)
+        kubectl create secret generic ${namespace_options} hlf--peer-org${ORG_NUM}-admincert --from-file=cert.pem=${ORG_CERT}
 
         ## Create a secret to hold the admin key:
-        export ORG_KEY=$(ls ${PROD_DIR}/config/PeerMSP/keystore/*_sk)
-        kubectl create secret generic ${namespace_options} hlf--peer-adminkey --from-file=key.pem=${ORG_KEY}
+        export ORG_KEY=$(ls ${PROD_DIR}/config/Org${ORG_NUM}MSP/keystore/*_sk)
+        kubectl create secret generic ${namespace_options} hlf--peer-org${ORG_NUM}-adminkey --from-file=key.pem=${ORG_KEY}
 
         ## Create a secret to hold the CA certificate:
-        export CA_CERT=$(ls ${PROD_DIR}/config/PeerMSP/cacerts/*.pem)
-        kubectl create secret generic ${namespace_options} hlf--peer-ca-cert --from-file=cacert.pem=${CA_CERT}
+        export CA_CERT=$(ls ${PROD_DIR}/config/Org${ORG_NUM}MSP/cacerts/*.pem)
+        kubectl create secret generic ${namespace_options} hlf--peer-org${ORG_NUM}-ca-cert --from-file=cacert.pem=${CA_CERT}
 
     else
         echo "Admin_Conf can't be empty...!"
@@ -175,45 +249,43 @@ function Save_Admin_Crypto() {
 
 #######################################
 ## Genesis and channel
-function Genesis_Channel() {
-
-    export CHANNEL_NAME=""
-    until [[ ! -z "$CHANNEL_NAME" ]] ; do
-      read -r -p "Enter Channel name :: " CHANNEL_NAME </dev/tty
-    done
-    echo "Configuring Channel with name :: $CHANNEL_NAME"
-
+function Genesis_Create() {
+    echo "Create Genesis Block...!"
     export P_W_D=${PWD} ; cd ${PROD_DIR}/config
-    ## Create Genesis block and Channel
+    ## Create Genesis block
     configtxgen -profile OrdererGenesis -outputBlock ./genesis.block
-    configtxgen -profile ${CHANNEL_NAME} -channelID ${CHANNEL_NAME} -outputCreateChannelTx ./${CHANNEL_NAME}.tx
     ## Save them as secrets
     Setup_Namespace orderers && kubectl create secret generic ${namespace_options} hlf--genesis --from-file=genesis.block
+    cd ${P_W_D}
+}
+
+
+#######################################
+## Genesis and channel
+function Channel_Create() {
+    echo "Create Channel Block...!"
+    Choose_Env channel_name
+
+    export P_W_D=${PWD} ; cd ${PROD_DIR}/config
+    ## Create Channel
+    configtxgen -profile ${CHANNEL_NAME} -channelID ${CHANNEL_NAME} -outputCreateChannelTx ./${CHANNEL_NAME}.tx
+    ## Save them as secrets
     Setup_Namespace peers && kubectl create secret generic ${namespace_options} hlf--channel --from-file=${CHANNEL_NAME}.tx
     cd ${P_W_D}
 }
 
 
-
-
 #######################################
 ## Fabric Orderer nodes Creation
 function Orderer_Conf() {
-
-    export ORDERER_NUM=""
-    until [[ "$ORDERER_NUM" =~ ^[0-9]+$ ]] ; do
-      read -r -p "Enter Orderer ID (integers only) :: " ORDERER_NUM </dev/tty
-    done
-    echo "Configuring Orderer with ID :: $ORDERER_NUM"
+    echo "Create and Add Orderer node...!"
+    Choose_Env order_number
 
     export ORDERER_NODE_PASS=$(base64 <<< ${K8S_NAMESPACE}-ord-${ORDERER_NUM})
 
-    ## getting CA_INGRESS
+    ## getting CA_INGRESS value and Gatering cas pod name
     Setup_Namespace cas
     export CA_INGRESS=$(kubectl get ingress ${namespace_options} -l "app=hlf-ca,release=ca" -o jsonpath="{.items[0].spec.rules[0].host}")
-
-    ## Gatering cas pod name
-    Setup_Namespace cas
     export CA_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-ca,release=ca" -o jsonpath="{.items[0].metadata.name}")
 
     ## Register orderer with CA
@@ -247,26 +319,25 @@ function Orderer_Conf() {
 #######################################
 ## Fabric Peer nodes Creation
 function Peer_Conf() {
+    echo "Create and Add Peer node...!"
 
-    export PEER_NUM=""
-    until [[ "$PEER_NUM" =~ ^[0-9]+$ ]] ; do
-      read -r -p "Enter Peer ID (integers only) :: " PEER_NUM </dev/tty
-    done
-    echo "Configuring Peer with ID :: $PEER_NUM"
+    Choose_Env org_number
+    Choose_Env peer_number
 
-    export PEER_NODE_PASS=$(base64 <<< ${K8S_NAMESPACE}-ord-${PEER_NUM})
+    export PEER_NODE_PASS=$(base64 <<< ${K8S_NAMESPACE}-peer-org${ORG_NUM}-${PEER_NUM})
 
-    ## getting CA_INGRESS
+    ## getting CA_INGRESS value and Gatering cas pod name
     Setup_Namespace cas
     export CA_INGRESS=$(kubectl get ingress ${namespace_options} -l "app=hlf-ca,release=ca" -o jsonpath="{.items[0].spec.rules[0].host}")
+    export CA_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-ca,release=ca" -o jsonpath="{.items[0].metadata.name}")
 
     ## Install CouchDB chart
     Setup_Namespace peers
-    envsubst < ${PROD_DIR}/helm_values/cdb-peer.yaml > ${PROD_DIR}/helm_values/cdb-peer${PEER_NUM}.yaml
-    helm install stable/hlf-couchdb -n cdb-peer${PEER_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/cdb-peer${PEER_NUM}.yaml
+    envsubst < ${PROD_DIR}/helm_values/cdb-peer.yaml > ${PROD_DIR}/helm_values/cdb-peer-org${ORG_NUM}-${PEER_NUM}.yaml
+    helm install stable/hlf-couchdb -n cdb-peer-org${ORG_NUM}-${PEER_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/cdb-peer-org${ORG_NUM}-${PEER_NUM}.yaml
 
     ## Check that CouchDB is running
-    export CDB_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-couchdb,release=cdb-peer${PEER_NUM}" -o jsonpath="{.items[*].metadata.name}")
+    export CDB_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-couchdb,release=cdb-peer-org${ORG_NUM}-${PEER_NUM}" -o jsonpath="{.items[*].metadata.name}")
 
     until $(kubectl logs ${namespace_options} $CDB_POD | grep 'Apache CouchDB has started on') ; do
         echo "waiting for ${CDB_POD} to start...!"
@@ -275,30 +346,26 @@ function Peer_Conf() {
     echo "CouchDB started...! : ${CDB_POD}"
 
 
-    ## Gatering cas pod name
-    Setup_Namespace cas
-    export CA_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-ca,release=ca" -o jsonpath="{.items[0].metadata.name}")
-
     ## Register Peer with CA
-    kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client register --id.name peer${PEER_NUM} --id.secret ${PEER_NODE_PASS} --id.type peer
-    FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -d -u https://peer${PEER_NUM}:${PEER_NODE_PASS}@${CA_INGRESS} -M peer${PEER_NUM}_MSP
+    kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client register --id.name peer-org${ORG_NUM}-${PEER_NUM} --id.secret ${PEER_NODE_PASS} --id.type peer
+    FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -d -u https://peer-org${ORG_NUM}-${PEER_NUM}:${PEER_NODE_PASS}@${CA_INGRESS} -M peer-org${ORG_NUM}-${PEER_NUM}_MSP
 
 
     ## Save the Peer certificate in a secret
     Setup_Namespace peers
-    export NODE_CERT=$(ls ${PROD_DIR}/config/peer${PEER_NUM}_MSP/signcerts/*.pem)
-    kubectl create secret generic ${namespace_options} hlf--peer${PEER_NUM}-idcert --from-file=cert.pem=${NODE_CERT}
+    export NODE_CERT=$(ls ${PROD_DIR}/config/peer-org${ORG_NUM}-${PEER_NUM}_MSP/signcerts/*.pem)
+    kubectl create secret generic ${namespace_options} hlf--peer-org${ORG_NUM}-${PEER_NUM}-idcert --from-file=cert.pem=${NODE_CERT}
 
     ## Save the Peer private key in another secret
-    export NODE_KEY=$(ls ${PROD_DIR}/config/peer${PEER_NUM}_MSP/keystore/*_sk)
-    kubectl create secret generic ${namespace_options} hlf--peer${PEER_NUM}-idkey --from-file=key.pem=${NODE_KEY}
+    export NODE_KEY=$(ls ${PROD_DIR}/config/peer-org${ORG_NUM}-${PEER_NUM}_MSP/keystore/*_sk)
+    kubectl create secret generic ${namespace_options} hlf--peer-org${ORG_NUM}-${PEER_NUM}-idkey --from-file=key.pem=${NODE_KEY}
 
     ## Install Peer using helm
-    envsubst < ${PROD_DIR}/helm_values/peer.yaml > ${PROD_DIR}/helm_values/peer${PEER_NUM}.yaml
-    helm install stable/hlf-peer -n peer${PEER_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/peer${PEER_NUM}.yaml
+    envsubst < ${PROD_DIR}/helm_values/peer.yaml > ${PROD_DIR}/helm_values/peer-org${ORG_NUM}-${PEER_NUM}.yaml
+    helm install stable/hlf-peer -n peer-org${ORG_NUM}-${PEER_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/peer-org${ORG_NUM}-${PEER_NUM}.yaml
 
     ## check that Peer is running
-    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}" -o jsonpath="{.items[0].metadata.name}")
+    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer-org${ORG_NUM}-${PEER_NUM}" -o jsonpath="{.items[0].metadata.name}")
 
     until $(kubectl logs ${namespace_options} $PEER_POD | grep 'Starting peer') ; do
         echo "waiting for ${PEER_POD} to start...!"
@@ -312,17 +379,17 @@ function Peer_Conf() {
 #######################################
 ## Create channel
 function Create_Channel() {
+    echo "Create channel in peer node : Peer1"
     Setup_Namespace peers
     ## Create channel (do this only once in Peer 1)
     export PEER_NUM="1"
 
-    export CHANNEL_NAME=""
-    until [[ ! -z "$CHANNEL_NAME" ]] ; do
-      read -r -p "Enter Channel name :: " CHANNEL_NAME </dev/tty
-    done
-    echo "Configuring Channel with name :: $CHANNEL_NAME on peer : peer${PEER_NUM}"
+    Choose_Env org_number
+    Choose_Env channel_name
 
-    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}" -o jsonpath="{.items[0].metadata.name}")
+    echo "Configuring Channel with name :: $CHANNEL_NAME on peer : peer-org${ORG_NUM}-${PEER_NUM}"
+
+    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer-org${ORG_NUM}-${PEER_NUM}" -o jsonpath="{.items[0].metadata.name}")
     kubectl exec ${namespace_options} ${PEER_POD} -- peer channel create -o ord1-hlf-ord.orderers.svc.cluster.local:7050 -c ${CHANNEL_NAME} -f /hl_config/channel/${CHANNEL_NAME}.tx
 
 }
@@ -332,20 +399,22 @@ function Create_Channel() {
 ## Join and Fetch channel
 function Join_Channel() {
     Setup_Namespace peers
+    Choose_Env org_number
+    Choose_Env peer_number
+    Choose_Env channel_name
 
-    export PEER_NUM=""
-    until [[ "$PEER_NUM" =~ ^[0-9]+$ ]] ; do
-      read -r -p "Enter Peer ID (integers only) :: " PEER_NUM </dev/tty
-    done
-    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}" -o jsonpath="{.items[0].metadata.name}")
-    echo "Connecting with Peer : peer${PEER_NUM} on pod : ${PEER_POD}"
+    echo "Join Channel in peer : peer-org${ORG_NUM}-${PEER_NUM}"
+    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer-org${ORG_NUM}-${PEER_NUM}" -o jsonpath="{.items[0].metadata.name}")
+    echo "Connecting with Peer : peer-org${ORG_NUM}-${PEER_NUM} on pod : ${PEER_POD}"
 
     export CHANNEL_NAME=""
     until [[ ! -z "${CHANNEL_NAME}" ]] ; do
-      read -r -p "Enter Channel name to join from peer peer${PEER_NUM} :: " CHANNEL_NAME </dev/tty
-      export FIRST_PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer1" -o jsonpath="{.items[0].metadata.name}")
+      read -r -p "Enter Channel name to join from peer peer-org${ORG_NUM}-${PEER_NUM} :: " CHANNEL_NAME </dev/tty
+    done
+
+      export FIRST_PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer-org${ORG_NUM}-1" -o jsonpath="{.items[0].metadata.name}")
       if [[ kubectl exec ${FIRST_PEER_POD} ${namespace_options} -- peer channel list | grep ${CHANNEL_NAME} ]] ; then
-        echo "channel ${CHANNEL_NAME} found...!"
+        echo "channel ${CHANNEL_NAME} found...! ; joining from peer peer-org${ORG_NUM}-${PEER_NUM}"
       else
         echo "channel ${CHANNEL_NAME} not found...!, please give the correct chaneel name which exist..!"
         CHANNEL_LIST=$(kubectl exec ${FIRST_PEER_POD} ${namespace_options} -- peer channel list)
@@ -353,10 +422,10 @@ function Join_Channel() {
         for channellist in ${CHANNEL_LIST[@]} ; do
             echo "$channellist"
         done
-        exit 0
+        exit 1
       fi
-    done
-    echo "Fetching and joining Channel with name :: $CHANNEL_NAME on peer : peer${PEER_NUM} wich has name : ${PEER_POD}"
+
+    echo "Fetching and joining Channel with name :: $CHANNEL_NAME on peer : peer-org${ORG_NUM}-${PEER_NUM} wich has name : ${PEER_POD}"
 
     ## Fetch and join channel
     kubectl exec ${namespace_options} ${PEER_POD} -- peer channel fetch config /var/hyperledger/${CHANNEL_NAME}.block -c ${CHANNEL_NAME} -o ord1-hlf-ord.orderers.svc.cluster.local:7050
@@ -381,7 +450,6 @@ done
 
 
 
-
 if [[ $option = initial ]]; then
     Helm_Configure
     echo "sleeping for 10 sec" ; sleep 10
@@ -389,18 +457,21 @@ if [[ $option = initial ]]; then
     Nginx_Configure
     Setup_Namespace create
     echo "sleeping for 20 sec" ; sleep 20
-elif [[ $option = ca ]]; then
+elif [[ $option = cert-manager ]]; then
     echo "Configure CA Domain Name in file /helm_values/ca.yaml"
     Cert_Manager_Configure
     echo "sleeping for 10 sec" ; sleep 10
-elif [[ $option = fabric ]]; then
-    Fabric_Configure
+elif [[ $option = fabric-ca ]]; then
+    Fabric_CA_Configure
     echo "sleeping for 10 sec" ; sleep 10
 elif [[ $option = orgadmin ]]; then
     Orgadmin_Configure
     echo "sleeping for 10 sec" ; sleep 10
-elif [[ $option = genesis-channel ]]; then
-    Genesis_Channel
+elif [[ $option = genesis-block ]]; then
+    Genesis_Create
+    echo "sleeping for 10 sec" ; sleep 10
+elif [[ $option = channel-block ]]; then
+    Channel_Create
     echo "sleeping for 10 sec" ; sleep 10
 elif [[ $option = orderer-create ]]; then
     Orderer_Conf
@@ -408,10 +479,10 @@ elif [[ $option = orderer-create ]]; then
 elif [[ $option = peer-create ]]; then
     Peer_Conf
     echo "sleeping for 10 sec" ; sleep 10
-elif [[ $option = channel-conf ]]; then
+elif [[ $option = channel-create ]]; then
     Create_Channel
     echo "sleeping for 10 sec" ; sleep 10
-elif [[ $option = cp-srv ]]; then
+elif [[ $option = channel-join ]]; then
     Join_Channel
     echo "sleeping for 10 sec" ; sleep 10
 else
@@ -421,7 +492,31 @@ _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-
 
 Main modes of operation:
 
-   
+initial         :   Initialisation for the HLF Cluster, It will create fast storageclass, nginx ingress and namespaces
+cert-manager    :   CA Mager Configuration
+fabric-ca       :   Deploy Fabric CA on namespace ca 
+orgadmin        :   Orderer and Peer Admin certs creation and store it in the K8s secrets on namespace orderers and peers
+genesis-block   :   Genesis block creation
+channel-block   :   Creating the Channel
+orderer-create  :   Create the Orderers certs and configure it in the K8s secrets, Deploying the Orderers nodes on namespace orderers
+peer-create     :   Create the Orderers certs and configure it in the K8s secrets, Deploying the Peers nodes on namespace peers
+channel-create  :   One time configuraiton on first peer (peer-org1-1 / peer-org2-1) on each organisation ; Creating the channel in one peer
+channel-join    :   Join to the channel which we created before
+
+
+First Time Deployment :
++++++++++++++++++++++++
+
+initial
+cert-manager
+fabric-ca
+orgadmin --- (1 orderer admin configuration, "N" peer admin configuration for "N" organisation)
+genesis-block
+channel-block
+orderer-create (Create "N" number of orderers which mentioned in "configtx.yaml")
+peer-create --- (Create "N" Number of peers for "N" Orderers == "N*N")
+channel-create (One time configuration, run this only on one peer per Organisation [ peer-org1-1 / peer-org2-1 ])
+channel-join --- (Run on "N" Peers on all Organisation)
 _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
 EOF
 fi
