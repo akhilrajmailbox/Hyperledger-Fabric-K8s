@@ -72,7 +72,7 @@ Organizations:
             # AnchorPeers defines the location of peers that can be used
             # for cross org gossip communication.  Note, this value is only
             # encoded in the genesis block in the Application section context
-            - Host: peer-org1-1-hlf-peer.peers.svc.cluster.local
+            - Host: peer1-org-hlf-peer.peers.svc.cluster.local
               Port: 7051
 
     # Organization controlling both peers and Orderers
@@ -104,7 +104,7 @@ Organizations:
             # AnchorPeers defines the location of peers that can be used
             # for cross org gossip communication.  Note, this value is only
             # encoded in the genesis block in the Application section context
-            - Host: peer-org2-1-hlf-peer.peers.svc.cluster.local
+            - Host: peer1-org2-hlf-peer.peers.svc.cluster.local
               Port: 7051
 
 
