@@ -8,13 +8,13 @@ persistence:
 
 peer:
   databaseType: CouchDB
-  couchdbInstance: cdb-peer-org${ORG_NUM}-${PEER_NUM}
+  couchdbInstance: cdb-peer${PEER_NUM}-org${ORG_NUM}
   mspID: Org${ORG_NUM}MSP
 
 secrets:
   peer: 
-    cert: hlf--peer-org${ORG_NUM}-${PEER_NUM}-idcert
-    key: hlf--peer-org${ORG_NUM}-${PEER_NUM}-idkey
+    cert: hlf--peer${PEER_NUM}-org${ORG_NUM}-idcert
+    key: hlf--peer${PEER_NUM}-org${ORG_NUM}-idkey
     caCert: hlf--peer-org${ORG_NUM}-ca-cert
   channel: hlf--channel
   adminCert: hlf--peer-org${ORG_NUM}-admincert
@@ -22,11 +22,22 @@ secrets:
   caServerTls: ca--tls
 
 affinity:
+  podAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 95
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: release
+            operator: In
+            values:
+            - cdb-peer${PEER_NUM}-org${ORG_NUM}
+        topologyKey: kubernetes.io/hostname
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 95
-        podAffinityTerm:
-          topologyKey: "kubernetes.io/hostname"
-          labelSelector:
-            matchLabels:
-              app: hlf-peer
+    - podAffinityTerm:
+        labelSelector:
+          matchLabels:
+            app: hlf-peer
+        topologyKey: kubernetes.io/hostname
+      weight: 95

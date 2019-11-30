@@ -4,7 +4,7 @@ metadata:
   name: fast
 provisioner: kubernetes.io/aws-ebs
 parameters:
-  # storageaccount: pd-standard
-  storageaccount: pd-ssd
+  # type: pd-standard
+  type: io1
   fsType: xfs
 allowVolumeExpansion: true
