@@ -168,6 +168,13 @@ function Choose_Env() {
         done
         echo "Configuring Channel with name :: ${CHANNEL_NAME}"
         export CHANNEL_NAME="${CHANNEL_NAME}"
+    elif [[ ${1} == "channel_opt" ]] ; then
+        export CHANNEL_OPT=""
+        until [[ "${CHANNEL_OPT}" == "Org1Channel" ]] || [[ "${CHANNEL_OPT}" == "Org2Channel" ]] || [[ "${CHANNEL_OPT}" == "TwoOrgsChannel" ]] ; do
+        read -r -p "Enter Channel Option (Org1Channel, Org2Channel or TwoOrgsChannel) :: " CHANNEL_OPT </dev/tty
+        done
+        echo "Configuring Channel with Option :: ${CHANNEL_OPT}"
+        export CHANNEL_OPT="${CHANNEL_OPT}"
     else
         echo "User input for Choose_Env is mandatory"
     fi
@@ -369,6 +376,7 @@ function Channel_Create() {
     
     Setup_Namespace peers
     Choose_Env channel_name
+    Choose_Env channel_opt
     if [[ -f ${PROD_DIR}/config/${CHANNEL_NAME}.tx ]] ; then
         echo "Channel block already created...!"
         echo -e "Please move the file ${PROD_DIR}/config/${CHANNEL_NAME}.tx. \n Delete the secrets from orderer namespace : kubectl ${namespace_options} delete secrets hlf--channel. \n then try to run this command again...!"
@@ -381,7 +389,7 @@ function Channel_Create() {
 
         export P_W_D=${PWD} ; cd ${PROD_DIR}/config
         ## Create Channel
-        configtxgen -profile MyChannel -channelID ${CHANNEL_NAME} -outputCreateChannelTx ./${CHANNEL_NAME}.tx
+        configtxgen -profile ${CHANNEL_OPT} -channelID ${CHANNEL_NAME} -outputCreateChannelTx ./${CHANNEL_NAME}.tx
         ## Save them as secrets
         kubectl create secret generic ${namespace_options} hlf--channel --from-file=${CHANNEL_NAME}.tx
         cd ${P_W_D}
@@ -447,8 +455,8 @@ function Peer_Conf() {
 
     Choose_Env org_number
     Choose_Env peer_number
-    if [[ -d ${PROD_DIR}/config/peer-org${ORG_NUM}-${PEER_NUM}_MSP ]] ; then
-        echo "peer-org${ORG_NUM}-${PEER_NUM} already configured...!"
+    if [[ -d ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP ]] ; then
+        echo "peer${PEER_NUM}-org${ORG_NUM} already configured...!"
         echo "Please move/rename the folder ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP, then try to run this command again...!"
         echo ""
         echo "Warning :: I sure hope you know what you're doing...!"
@@ -515,23 +523,34 @@ function Peer_Conf() {
 
 #######################################
 ## Create channel
-function Create_Channel() {
-    echo "Create channel in peer node : Peer1"
-    Setup_Namespace peers
-    ## Create channel (do this only once in Peer 1)
-    export PEER_NUM="1"
+function Create_Channel_On_Peer() {
 
-    Choose_Env org_number
     Choose_Env channel_name
+    if [[ -f ${PROD_DIR}/config/${CHANNEL_NAME}.tx ]] ; then
+        echo "Create channel : ${CHANNEL_NAME} in peer node : Peer1"
+        Setup_Namespace peers
+        ## Create channel (do this only once in Peer 1)
+        export PEER_NUM="1"
+        Choose_Env org_number
 
-    echo "Configuring Channel with name :: $CHANNEL_NAME on peer : peer${PEER_NUM}-org${ORG_NUM}"
-
-    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}-org${ORG_NUM}" -o jsonpath="{.items[0].metadata.name}")
-    Pod_Status_Wait ${PEER_POD}
-    kubectl exec ${namespace_options} ${PEER_POD} -- peer channel create -o ord1-hlf-ord.orderers.svc.cluster.local:7050 -c ${CHANNEL_NAME} -f /hl_config/channel/${CHANNEL_NAME}.tx
+        echo "Configuring Channel with name :: $CHANNEL_NAME on peer : peer${PEER_NUM}-org${ORG_NUM}"
+        export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}-org${ORG_NUM}" -o jsonpath="{.items[0].metadata.name}")
+        Pod_Status_Wait ${PEER_POD}
+        kubectl ${namespace_options} cp ${PROD_DIR}/config/${CHANNEL_NAME}.tx ${PEER_POD}:/${CHANNEL_NAME}.tx
+        echo "kubectl exec ${namespace_options} ${PEER_POD} -- bash -c 'CORE_PEER_MSPCONFIGPATH=\$ADMIN_MSP_PATH peer channel create -o ord1-hlf-ord.orderers.svc.cluster.local:7050 -c ${CHANNEL_NAME} -f /${CHANNEL_NAME}.tx'" | bash
+    else
+        echo "Channel ${CHANNEL_NAME}.block for channel ${CHANNEL_NAME} not created yet...!"
+        echo "Please run channel-block for create your channel..!"
+        exit 1
+    fi
 
 }
 
+
+
+# CORE_PEER_LOCALMSPID=Org1MSP
+# CORE_PEER_MSPCONFIGPATH=/var/hyperledger/admin_msp/
+# peer channel create -o ord1-hlf-ord.orderers.svc.cluster.local:7050 -c kogxchannel -f /kogxchannel.tx
 
 #######################################
 ## Join and Fetch channel
@@ -548,10 +567,11 @@ function Join_Channel() {
     echo "Fetching and joining Channel with name :: $CHANNEL_NAME on peer : peer${PEER_NUM}-org${ORG_NUM} wich has name : ${PEER_POD}"
 
     ## Fetch and join channel
+    kubectl exec ${namespace_options} ${PEER_POD} -- rm -rf /var/hyperledger/${CHANNEL_NAME}.block
     kubectl exec ${namespace_options} ${PEER_POD} -- peer channel fetch config /var/hyperledger/${CHANNEL_NAME}.block -c ${CHANNEL_NAME} -o ord1-hlf-ord.orderers.svc.cluster.local:7050
-    kubectl exec ${namespace_options} ${PEER_POD} -- bash -c 'CORE_PEER_MSPCONFIGPATH=$ADMIN_MSP_PATH peer channel join -b /var/hyperledger/${CHANNEL_NAME}.block'
-
-    if [[ $(kubectl exec ${PEER_POD} ${namespace_options} -- peer channel list | grep ${CHANNEL_NAME} > /dev/null 2>&1) ]] ; then
+    echo "kubectl exec ${namespace_options} ${PEER_POD} -- bash -c 'CORE_PEER_MSPCONFIGPATH=\$ADMIN_MSP_PATH peer channel join -b /var/hyperledger/${CHANNEL_NAME}.block'" | bash
+    echo "I'm Waiting for the peer to join to my channel...." ; sleep 5
+    if [[ $(kubectl exec ${PEER_POD} ${namespace_options} -- peer channel list | grep ${CHANNEL_NAME}) ]] ; then
         echo "peer peer${PEER_NUM}-org${ORG_NUM} successfully joined to channel : ${CHANNEL_NAME}"
     else
         echo "Channel : ${CHANNEL_NAME} not found..!, please check it manually or debugg the issue..!"
@@ -559,7 +579,6 @@ function Join_Channel() {
         exit 1
     fi
 }
-
 
 
 
@@ -577,42 +596,42 @@ done
 
 if [[ $option = initial ]]; then
     Helm_Configure
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
     Storageclass_Configure
     Nginx_Configure
     Setup_Namespace create
-    echo "sleeping for 20 sec" ; sleep 20
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = cert-manager ]]; then
     Cert_Manager_Configure
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = fabric-ca ]]; then
     echo "Configure CA Domain Name in file /helm_values/ca.yaml"
     Fabric_CA_Configure
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = org-orderer-admin ]]; then
     Orgadmin_Orderer_Configure
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = org-peer-admin ]]; then
     Orgadmin_Peer_Configure
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = genesis-block ]]; then
     Genesis_Create
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = channel-block ]]; then
     Channel_Create
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = orderer-create ]]; then
     Orderer_Conf
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = peer-create ]]; then
     Peer_Conf
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = channel-create ]]; then
-    Create_Channel
-    echo "sleeping for 10 sec" ; sleep 10
+    Create_Channel_On_Peer
+    echo "sleeping for 2 sec" ; sleep 2
 elif [[ $option = channel-join ]]; then
     Join_Channel
-    echo "sleeping for 10 sec" ; sleep 10
+    echo "sleeping for 2 sec" ; sleep 2
 else
 	echo "$Command_Usage"
 cat << EOF
@@ -632,21 +651,6 @@ peer-create         :   Create the Orderers certs and configure it in the K8s se
 channel-create      :   One time configuraiton on first peer (peer-org1-1 / peer-org2-1) on each organisation ; Creating the channel in one peer
 channel-join        :   Join to the channel which we created before
 
-
-First Time Deployment :
-+++++++++++++++++++++++
-
-initial
-cert-manager
-fabric-ca
-org-orderer-admin
-org-peer-admin --- ("N" peer admin configuration for "N" organisation)
-genesis-block
-channel-block
-orderer-create (Create "N" number of orderers which mentioned in "configtx.yaml")
-peer-create --- (Create "N" Number of peers for "N" Orderers == "N*N")
-channel-create (One time configuration, run this only on one peer per Organisation [ peer-org1-1 / peer-org2-1 ])
-channel-join --- (Run on "N" Peers on all Organisation)
 _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
 EOF
 fi
