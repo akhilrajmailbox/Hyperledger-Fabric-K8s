@@ -204,7 +204,7 @@ Orderer: &OrdererDefaults
     Addresses:
         - ord1-hlf-ord.orderers.svc.cluster.local:7050
         - ord2-hlf-ord.orderers.svc.cluster.local:7050
-        # - ord3-hlf-ord.orderers.svc.cluster.local:7050
+        - ord3-hlf-ord.orderers.svc.cluster.local:7050
 
     # Batch Timeout: The amount of time to wait before creating a batch
     BatchTimeout: 2s

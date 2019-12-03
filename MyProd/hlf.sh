@@ -547,7 +547,6 @@ function Create_Channel_On_Peer() {
 }
 
 
-
 # CORE_PEER_LOCALMSPID=Org1MSP
 # CORE_PEER_MSPCONFIGPATH=/var/hyperledger/admin_msp/
 # peer channel create -o ord1-hlf-ord.orderers.svc.cluster.local:7050 -c kogxchannel -f /kogxchannel.tx
