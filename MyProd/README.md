@@ -18,9 +18,7 @@ go version
 go get -u github.com/hyperledger/fabric-ca/cmd/...
 ```
 
-### Install Fabric-tools on your [Mac](https://github.com/hyperledger/homebrew-fabric/tree/master/Formula)
-
-[here](https://github.com/hyperledger/homebrew-fabric/tree/master/Formula)
+### Install [Fabric-tools](https://github.com/hyperledger/homebrew-fabric/tree/master/Formula) on your Mac
 
 ```
 brew tap aidtechnology/homebrew-fabric
@@ -34,7 +32,7 @@ which configtxlator
 
 [Configure Cert-manager with Let's Encrypt](https://cert-manager.io/docs/tutorials/acme/ingress/)
 
-### Debug Cert-manager; You can actually find error messages in each of these, like so:
+### [Debug Cert-manager](https://github.com/jetstack/cert-manager/issues/2020) ; You can actually find error messages in each of these, like so:
 
 ```
 kubectl get certificaterequest
@@ -45,15 +43,13 @@ kubectl get challenge
 kubectl describe challenge X
 ```
 
-[link](https://github.com/jetstack/cert-manager/issues/2020)
-
-[configtx-example](https://github.com/hyperledger/fabric-sdk-go/blob/master/test/fixtures/fabric/v1.3/config/configtx.yaml)
-
-
 
 ## K8s Deployment
 
 **WARNING : Configure your `configtx.yml` according to your needs, once you deploy the network then there is no option to reconfigure it without a downtime**
+
+[configtx-example](https://github.com/hyperledger/fabric-sdk-go/blob/master/test/fixtures/fabric/v1.3/config/configtx.yaml)
+
 
 ### This repo have the following custom configuration in the file : `configtx.yml` for the fabric network
 
