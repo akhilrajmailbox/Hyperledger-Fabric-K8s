@@ -18,7 +18,7 @@ go version
 go get -u github.com/hyperledger/fabric-ca/cmd/...
 ```
 
-### Install Fabric-tools on your Mac
+### Install Fabric-tools on your [Mac](https://github.com/hyperledger/homebrew-fabric/tree/master/Formula)
 
 [here](https://github.com/hyperledger/homebrew-fabric/tree/master/Formula)
 
