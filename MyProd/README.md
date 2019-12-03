@@ -307,3 +307,25 @@ Once you created the channel in the fabric network with the above command, then 
 ./hlf.sh -o channel-create (One time configuration, run this only on one peer per Organisation [ peer-org1-1 / peer-org2-1 ])
 ./hlf.sh -o channel-join ---> (Run on "N" Peers on all Organisation)
 ```
+
+
+### Kafka Topics Management :
+
+If you are using Managed Kfka Services as Message brocker, then after testing or if you want to recreate the channel with same channel name which you used before; then try to delete the topics from kafka and then configure the fabric network.
+
+**You must need to configure Kafka client in your system in order to run the scripts, Put this script under kafka bin folder**
+
+```
+sudo mkdir /opt/kafka && cd /opt/kafka
+sudo curl "https://www.apache.org/dist/kafka/2.1.1/kafka_2.11-2.1.1.tgz" -o ./kafka.tgz
+sudo tar -xzvf kafka.tgz --strip 1
+sudo rm -rf kafka.tgz
+sudo curl https://raw.githubusercontent.com/akhilrajmailbox/Hyperledger-Fabric-K8s/master/MyProd/extra/kafka-mytopic.sh -o /opt/kafka/bin/kafka-mytopic.sh
+sudo chmod a+x /opt/kafka/bin/kafka-mytopic.sh
+cd /opt/kafka/bin/  ## update your zookeeper ip address in the script : kafka-mytopic.sh
+./kafka-mytopic.sh -o [OPTION...]
+```
+
+```
+./kafka-mytopic.sh -o [OPTION...]
+```
