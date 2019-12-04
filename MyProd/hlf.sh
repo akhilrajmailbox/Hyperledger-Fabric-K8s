@@ -610,6 +610,18 @@ function Join_Channel() {
 }
 
 
+#######################################
+## List channel
+function List_Channel() {
+    Setup_Namespace peers
+    Choose_Env org_number
+    Choose_Env peer_number
+
+    export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}-org${ORG_NUM}" -o jsonpath="{.items[0].metadata.name}")
+    echo "List Channels which peer : peer${PEER_NUM}-org${ORG_NUM} has joined...!"
+    kubectl exec ${PEER_POD} ${namespace_options} -- peer channel list
+}
+
 
 
 export Command_Usage="Usage: ./hgf.sh -o [OPTION...]"
@@ -661,6 +673,9 @@ elif [[ $option = channel-create ]]; then
 elif [[ $option = channel-join ]]; then
     Join_Channel
     echo "sleeping for 2 sec" ; sleep 2
+elif [[ $option = channel-ls ]]; then
+    List_Channel
+    echo "sleeping for 2 sec" ; sleep 2
 else
 	echo "$Command_Usage"
 cat << EOF
@@ -679,6 +694,7 @@ orderer-create      :   Create the Orderers certs and configure it in the K8s se
 peer-create         :   Create the Orderers certs and configure it in the K8s secrets, Deploying the Peers nodes on namespace peers
 channel-create      :   One time configuraiton on first peer (peer-org1-1 / peer-org2-1) on each organisation ; Creating the channel in one peer
 channel-join        :   Join to the channel which we created before
+channel-ls          :   List all channels which a particular peer has joined
 
 _-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_-_
 EOF
