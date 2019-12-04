@@ -1,5 +1,6 @@
 # Production Deployment
 
+[hyperledger fabric docs](https://hyperledger-fabric.readthedocs.io)
 
 ## Prerequisite
 
@@ -51,8 +52,21 @@ kubectl describe challenge X
 [configtx-example](https://github.com/hyperledger/fabric-sdk-go/blob/master/test/fixtures/fabric/v1.3/config/configtx.yaml)
 
 
-### This repo have the following custom configuration in the file : `configtx.yml` for the fabric network
+### The existing fabric network has the following components.
 
+* 5 orderer nodes
+* 4 peer nodes per organisations (8 nodes total) --->  2 peer out of 4 per organisation configured as AnchorPeers (peer1 and peer2) 
+* 2 organisations (Org1 and Org2)
+* 3 channels
+    * org1channel       -->     Channel for Org1 (Intra)
+    * org2channel       -->     channel for Org2 (Intra)
+    * twoorgschannel    -->     Channel for both Org1 and Org2 (Inter)
+* External HA Kafka Cluster
+* External MySQL Database Server for Fabric CA
+* One sub domain for Fabric CA
+
+
+### This repo have the following custom configuration in the file : `configtx.yml` for the fabric network
 
 
 * Organizations
@@ -311,7 +325,7 @@ Once you created the channel in the fabric network with the above command, then 
 
 ### Kafka Topics Management :
 
-If you are using Managed Kfka Services as Message brocker, then after testing or if you want to recreate the channel with same channel name which you used before; then try to delete the topics from kafka and then configure the fabric network.
+If you are using Managed Kafka Services as Message brocker, then after testing or if you want to recreate the channel with same channel name which you used before; then try to delete the topics from kafka and then configure the fabric network.
 
 **You must need to configure Kafka client in your system in order to run the scripts, Put this script under kafka bin folder**
 

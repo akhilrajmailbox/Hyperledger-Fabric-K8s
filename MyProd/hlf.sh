@@ -148,16 +148,16 @@ function Choose_Env() {
     elif [[ ${1} == "order_number" ]] ; then
         export ORDERER_NUM=""
         # until [[ "${ORDERER_NUM}" =~ ^[0-9]+$ ]] ; do
-        until [[ "${ORDERER_NUM}" == "1" ]] || [[ "${ORDERER_NUM}" == "2" ]] || [[ "${ORDERER_NUM}" == "3" ]] ; do
-        read -r -p "Enter Orderer ID (integers only : 1 , 2 or 3) :: " ORDERER_NUM </dev/tty
+        until [[ "${ORDERER_NUM}" == "1" ]] || [[ "${ORDERER_NUM}" == "2" ]] || [[ "${ORDERER_NUM}" == "3" ]] || [[ "${ORDERER_NUM}" == "4" ]] || [[ "${ORDERER_NUM}" == "5" ]] ; do
+        read -r -p "Enter Orderer ID (integers only : 1 , 2 , 3 , 4 or 5) :: " ORDERER_NUM </dev/tty
         done
         echo "Configuring Orderer with ID :: ${ORDERER_NUM}"
         export ORDERER_NUM="${ORDERER_NUM}"
     elif [[ ${1} == "peer_number" ]] ; then
         export PEER_NUM=""
         # until [[ "${PEER_NUM}" =~ ^[0-9]+$ ]] ; do
-        until [[ "${PEER_NUM}" == "1" ]] || [[ "${PEER_NUM}" == "2" ]] || [[ "${PEER_NUM}" == "3" ]] ; do
-        read -r -p "Enter Peer ID (integers only : 1 , 2 or 3) :: " PEER_NUM </dev/tty
+        until [[ "${PEER_NUM}" == "1" ]] || [[ "${PEER_NUM}" == "2" ]] || [[ "${PEER_NUM}" == "3" ]] || [[ "${PEER_NUM}" == "4" ]] ; do
+        read -r -p "Enter Peer ID (integers only : 1 , 2 , 3 or 4) :: " PEER_NUM </dev/tty
         done
         echo "Configuring Peer with ID :: ${PEER_NUM}"
         export PEER_NUM="${PEER_NUM}"
@@ -219,6 +219,8 @@ function Orgadmin_Orderer_Configure() {
         echo "Orderer Admin already configured...!"
         echo "Please move/rename the folder ${PROD_DIR}/config/OrdererMSP, then try to run this command again...!"
         echo ""
+        echo -e "Delete the secrets also. \n kubectl -n peers delete secrets hlf--ord-admincert hlf--ord-adminkey hlf--ord-ca-cert"
+        echo ""
         echo "Warning :: I sure hope you know what you're doing...!"
         echo ""
         exit 1
@@ -263,6 +265,8 @@ function Orgadmin_Peer_Configure() {
     if [[ -d ${PROD_DIR}/config/Org${ORG_NUM}MSP ]] ; then
         echo "Peer Admin already configured...!"
         echo "Please move/rename the folder ${PROD_DIR}/config/Org${ORG_NUM}MSP, then try to run this command again...!"
+        echo ""
+        echo -e "Delete the secrets also. \n kubectl -n peers delete secrets hlf--peer-org${ORG_NUM}-admincert hlf--peer-org${ORG_NUM}-adminkey hlf--peer-org${ORG_NUM}-ca-cert"
         echo ""
         echo "Warning :: I sure hope you know what you're doing...!"
         echo ""
@@ -406,6 +410,8 @@ function Orderer_Conf() {
         echo "ord${ORDERER_NUM} already configured...!"
         echo "Please move/rename the folder ${PROD_DIR}/config/ord${ORDERER_NUM}_MSP, then try to run this command again...!"
         echo ""
+        echo -e "Delete the secrets also. \n kubectl -n orderers delete secrets hlf--ord${ORDERER_NUM}-idcert hlf--ord${ORDERER_NUM}-idkey"
+        echo ""
         echo "Warning :: I sure hope you know what you're doing...!"
         echo ""
         exit 1
@@ -420,31 +426,42 @@ function Orderer_Conf() {
 
         ## Register orderer with CA
         Setup_Namespace cas
-        kubectl exec ${namespace_options} $CA_POD -- fabric-ca-client register --id.name ord${ORDERER_NUM} --id.secret ${ORDERER_NODE_PASS} --id.type orderer
-        FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -d -u https://ord${ORDERER_NUM}:${ORDERER_NODE_PASS}@${CA_INGRESS} -M ord${ORDERER_NUM}_MSP
+        ## Get identity of ord${ORDERER_NUM} (this should not exist at first)
+        if $(kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client identity list --id ord${ORDERER_NUM} > /dev/null 2>&1) ; then
+            echo "identity of ord${ORDERER_NUM} already there...!"
+            echo "If you really want to recreate the identity , the run the following command to remove the identiry : ord${ORDERER_NUM} from CA Server, then run the same command again to create it"
+            echo "kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client identity remove ord${ORDERER_NUM}"
+            echo ""
+            echo "Warning :: I sure hope you know what you're doing...!"
+            echo ""
+            exit 1
+        else
+            kubectl exec ${namespace_options} $CA_POD -- fabric-ca-client register --id.name ord${ORDERER_NUM} --id.secret ${ORDERER_NODE_PASS} --id.type orderer
+            FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -d -u https://ord${ORDERER_NUM}:${ORDERER_NODE_PASS}@${CA_INGRESS} -M ord${ORDERER_NUM}_MSP
 
-        ## Save the Orderer certificate in a secret
-        Setup_Namespace orderers
-        export NODE_CERT=$(ls ${PROD_DIR}/config/ord${ORDERER_NUM}_MSP/signcerts/*.pem)
-        kubectl create secret generic ${namespace_options} hlf--ord${ORDERER_NUM}-idcert --from-file=cert.pem=${NODE_CERT}
+            ## Save the Orderer certificate in a secret
+            Setup_Namespace orderers
+            export NODE_CERT=$(ls ${PROD_DIR}/config/ord${ORDERER_NUM}_MSP/signcerts/*.pem)
+            kubectl create secret generic ${namespace_options} hlf--ord${ORDERER_NUM}-idcert --from-file=cert.pem=${NODE_CERT}
 
-        ## Save the Orderer private key in another secret
-        export NODE_KEY=$(ls ${PROD_DIR}/config/ord${ORDERER_NUM}_MSP/keystore/*_sk)
-        kubectl create secret generic ${namespace_options} hlf--ord${ORDERER_NUM}-idkey --from-file=key.pem=${NODE_KEY}
+            ## Save the Orderer private key in another secret
+            export NODE_KEY=$(ls ${PROD_DIR}/config/ord${ORDERER_NUM}_MSP/keystore/*_sk)
+            kubectl create secret generic ${namespace_options} hlf--ord${ORDERER_NUM}-idkey --from-file=key.pem=${NODE_KEY}
 
-        ## Install orderers using helm
-        envsubst < ${PROD_DIR}/helm_values/ord.yaml > ${PROD_DIR}/helm_values/custom_values/ord${ORDERER_NUM}.yaml
-        helm install stable/hlf-ord -n ord${ORDERER_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/custom_values/ord${ORDERER_NUM}.yaml
+            ## Install orderers using helm
+            envsubst < ${PROD_DIR}/helm_values/ord.yaml > ${PROD_DIR}/helm_values/custom_values/ord${ORDERER_NUM}.yaml
+            helm install stable/hlf-ord -n ord${ORDERER_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/custom_values/ord${ORDERER_NUM}.yaml
 
-        ## Get logs from orderer to check it's actually started
-        export ORD_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-ord,release=ord${ORDERER_NUM}" -o jsonpath="{.items[0].metadata.name}")
+            ## Get logs from orderer to check it's actually started
+            export ORD_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-ord,release=ord${ORDERER_NUM}" -o jsonpath="{.items[0].metadata.name}")
 
-        until kubectl logs ${namespace_options} ${ORD_POD} | grep 'completeInitialization' > /dev/null 2>&1 ; do
-            echo "checking for completeInitialization ; waiting for ${ORD_POD} to start...!"
-            sleep 2
-        done
-        Pod_Status_Wait ${ORD_POD}
-        echo "Orderer nodes ord${ORDERER_NUM} started...! : ${ORD_POD}"
+            until kubectl logs ${namespace_options} ${ORD_POD} | grep 'completeInitialization' > /dev/null 2>&1 ; do
+                echo "checking for completeInitialization ; waiting for ${ORD_POD} to start...!"
+                sleep 2
+            done
+            Pod_Status_Wait ${ORD_POD}
+            echo "Orderer nodes ord${ORDERER_NUM} started...! : ${ORD_POD}"
+        fi
     fi
 }
 
@@ -458,6 +475,8 @@ function Peer_Conf() {
     if [[ -d ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP ]] ; then
         echo "peer${PEER_NUM}-org${ORG_NUM} already configured...!"
         echo "Please move/rename the folder ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP, then try to run this command again...!"
+        echo ""
+        echo -e "Delete the secrets also. \n kubectl -n peers delete secrets hlf--peer${PEER_NUM}-org${ORG_NUM}-idcert hlf--peer${PEER_NUM}-org${ORG_NUM}-idkey"
         echo ""
         echo "Warning :: I sure hope you know what you're doing...!"
         echo ""
@@ -490,32 +509,43 @@ function Peer_Conf() {
 
         ## Register Peer with CA
         Setup_Namespace cas
-        kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client register --id.name peer${PEER_NUM}-org${ORG_NUM} --id.secret ${PEER_NODE_PASS} --id.type peer
-        FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -d -u https://peer${PEER_NUM}-org${ORG_NUM}:${PEER_NODE_PASS}@${CA_INGRESS} -M peer${PEER_NUM}-org${ORG_NUM}_MSP
+        ## Get identity of peer${PEER_NUM}-org${ORG_NUM} (this should not exist at first)
+        if $(kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client identity list --id peer${PEER_NUM}-org${ORG_NUM} > /dev/null 2>&1) ; then
+            echo "identity of peer${PEER_NUM}-org${ORG_NUM} already there...!"
+            echo "If you really want to recreate the identity , the run the following command to remove the identiry : peer${PEER_NUM}-org${ORG_NUM} from CA Server, then run the same command again to create it"
+            echo "kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client identity remove peer${PEER_NUM}-org${ORG_NUM}"
+            echo ""
+            echo "Warning :: I sure hope you know what you're doing...!"
+            echo ""
+            exit 1
+        else
+            kubectl exec ${namespace_options} ${CA_POD} -- fabric-ca-client register --id.name peer${PEER_NUM}-org${ORG_NUM} --id.secret ${PEER_NODE_PASS} --id.type peer
+            FABRIC_CA_CLIENT_HOME=${PROD_DIR}/config fabric-ca-client enroll -d -u https://peer${PEER_NUM}-org${ORG_NUM}:${PEER_NODE_PASS}@${CA_INGRESS} -M peer${PEER_NUM}-org${ORG_NUM}_MSP
 
 
-        ## Save the Peer certificate in a secret
-        Setup_Namespace peers
-        export NODE_CERT=$(ls ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP/signcerts/*.pem)
-        kubectl create secret generic ${namespace_options} hlf--peer${PEER_NUM}-org${ORG_NUM}-idcert --from-file=cert.pem=${NODE_CERT}
+            ## Save the Peer certificate in a secret
+            Setup_Namespace peers
+            export NODE_CERT=$(ls ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP/signcerts/*.pem)
+            kubectl create secret generic ${namespace_options} hlf--peer${PEER_NUM}-org${ORG_NUM}-idcert --from-file=cert.pem=${NODE_CERT}
 
-        ## Save the Peer private key in another secret
-        export NODE_KEY=$(ls ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP/keystore/*_sk)
-        kubectl create secret generic ${namespace_options} hlf--peer${PEER_NUM}-org${ORG_NUM}-idkey --from-file=key.pem=${NODE_KEY}
+            ## Save the Peer private key in another secret
+            export NODE_KEY=$(ls ${PROD_DIR}/config/peer${PEER_NUM}-org${ORG_NUM}_MSP/keystore/*_sk)
+            kubectl create secret generic ${namespace_options} hlf--peer${PEER_NUM}-org${ORG_NUM}-idkey --from-file=key.pem=${NODE_KEY}
 
-        ## Install Peer using helm
-        envsubst < ${PROD_DIR}/helm_values/peer.yaml > ${PROD_DIR}/helm_values/custom_values/peer${PEER_NUM}-org${ORG_NUM}.yaml
-        helm install stable/hlf-peer -n peer${PEER_NUM}-org${ORG_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/custom_values/peer${PEER_NUM}-org${ORG_NUM}.yaml
+            ## Install Peer using helm
+            envsubst < ${PROD_DIR}/helm_values/peer.yaml > ${PROD_DIR}/helm_values/custom_values/peer${PEER_NUM}-org${ORG_NUM}.yaml
+            helm install stable/hlf-peer -n peer${PEER_NUM}-org${ORG_NUM} ${namespace_options} -f ${PROD_DIR}/helm_values/custom_values/peer${PEER_NUM}-org${ORG_NUM}.yaml
 
-        ## check that Peer is running
-        export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}-org${ORG_NUM}" -o jsonpath="{.items[0].metadata.name}")
+            ## check that Peer is running
+            export PEER_POD=$(kubectl get pods ${namespace_options} -l "app=hlf-peer,release=peer${PEER_NUM}-org${ORG_NUM}" -o jsonpath="{.items[0].metadata.name}")
 
-        until kubectl logs ${namespace_options} $PEER_POD | grep 'Starting peer' > /dev/null 2>&1 ; do
-            echo "waiting for ${PEER_POD} to start...!"
-            sleep 2
-        done
-        Pod_Status_Wait ${PEER_POD}
-        echo "Peer node peer${PEER_NUM}-org${ORG_NUM} started...! : ${PEER_POD}"
+            until kubectl logs ${namespace_options} $PEER_POD | grep 'Starting peer' > /dev/null 2>&1 ; do
+                echo "waiting for ${PEER_POD} to start...!"
+                sleep 2
+            done
+            Pod_Status_Wait ${PEER_POD}
+            echo "Peer node peer${PEER_NUM}-org${ORG_NUM} started...! : ${PEER_POD}"
+        fi
     fi
 }
 
@@ -573,7 +603,7 @@ function Join_Channel() {
     if [[ $(kubectl exec ${PEER_POD} ${namespace_options} -- peer channel list | grep ${CHANNEL_NAME}) ]] ; then
         echo "peer peer${PEER_NUM}-org${ORG_NUM} successfully joined to channel : ${CHANNEL_NAME}"
     else
-        echo "Channel : ${CHANNEL_NAME} not found..!, please check it manually or debugg the issue..!"
+        echo "Channel : ${CHANNEL_NAME} not found..!, please check it manually or debug the issue..!"
         echo "Use this command to confirm : kubectl exec ${PEER_POD} ${namespace_options} -- peer channel list | grep ${CHANNEL_NAME}"
         exit 1
     fi

@@ -14,7 +14,7 @@ ingress:
     - secretName: ca--tls
       hosts:
         # TODO: Change this to your Domain Name
-        - ca.hgf.example.com
+        - ca.hgf-test.example.com
 
 persistence:
   accessMode: ReadWriteOnce
@@ -29,9 +29,9 @@ caName: ca
 # TODO: Change this to your MySQL/ PostgreSQL data
 externalDatabase:
   type: mysql
-  host: hlf-mysql.jsdkbfasznfc455656.us-east-1.rds.amazonaws.com
+  host: hlf-mysql.adsfsdgvsde.us-east-2.rds.amazonaws.com
   username: myuser
-  password: securepass
+  password: myPass
   database: cadb
   port: 3306
 

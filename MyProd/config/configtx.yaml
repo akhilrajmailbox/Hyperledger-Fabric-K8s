@@ -74,6 +74,8 @@ Organizations:
             # encoded in the genesis block in the Application section context
             - Host: peer1-org1-hlf-peer.peers.svc.cluster.local
               Port: 7051
+            - Host: peer2-org1-hlf-peer.peers.svc.cluster.local
+              Port: 7051
 
     # Organization controlling both peers and Orderers
     - &Org2
@@ -105,6 +107,8 @@ Organizations:
             # for cross org gossip communication.  Note, this value is only
             # encoded in the genesis block in the Application section context
             - Host: peer1-org2-hlf-peer.peers.svc.cluster.local
+              Port: 7051
+            - Host: peer2-org2-hlf-peer.peers.svc.cluster.local
               Port: 7051
 
 ################################################################################
@@ -205,6 +209,8 @@ Orderer: &OrdererDefaults
         - ord1-hlf-ord.orderers.svc.cluster.local:7050
         - ord2-hlf-ord.orderers.svc.cluster.local:7050
         - ord3-hlf-ord.orderers.svc.cluster.local:7050
+        - ord4-hlf-ord.orderers.svc.cluster.local:7050
+        - ord5-hlf-ord.orderers.svc.cluster.local:7050
 
     # Batch Timeout: The amount of time to wait before creating a batch
     BatchTimeout: 2s
@@ -229,9 +235,9 @@ Orderer: &OrdererDefaults
         # If using K8S, we specify the service exposing the brokers
         # NOTE: Use Address/IP:port notation
         Brokers:
-            - b-2.hlf-kafka.dsfg5212.c6.kafka.us-east-1.amazonaws.com:9092
-            - b-1.hlf-kafka.dsfg5212.c6.kafka.us-east-1.amazonaws.com:9092
-            - b-3.hlf-kafka.dsfg5212.c6.kafka.us-east-1.amazonaws.com:9092
+            - b-3.hlf-kafka.z7rx1e.c6.kafka.us-east-1.amazonaws.com:9092
+            - b-1.hlf-kafka.z7rx1e.c6.kafka.us-east-1.amazonaws.com:9092
+            - b-2.hlf-kafka.z7rx1e.c6.kafka.us-east-1.amazonaws.com:9092
 
     # Organizations is the list of orgs which are defined as participants on
     # the orderer side of the network
@@ -349,7 +355,7 @@ Profiles:
         Application:
             <<: *ApplicationDefaults
             Organizations:
-                - *Org1
+                - *Org2
             Capabilities:
                 <<: *ApplicationCapabilities
 
