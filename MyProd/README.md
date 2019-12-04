@@ -304,6 +304,15 @@ Once you created the channel in the fabric network with the above command, then 
 ./hlf.sh -o channel-join
 ```
 
+#### List the channels in a peer
+
+List all channels which a particular peer has joined.
+
+```
+./hlf.sh -o channel-ls
+```
+
+
 
 
 ## First Time Deployment :
@@ -320,6 +329,7 @@ Once you created the channel in the fabric network with the above command, then 
 ./hlf.sh -o peer-create ---> (Create "N" Number of peers for "N" Orderers == "N*N")
 ./hlf.sh -o channel-create (One time configuration, run this only on one peer per Organisation [ peer-org1-1 / peer-org2-1 ])
 ./hlf.sh -o channel-join ---> (Run on "N" Peers on all Organisation)
+./hlf.sh -o channel-ls
 ```
 
 
